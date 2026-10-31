@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>India Unemployment & COVID-19 Shock Analysis Dashboard</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Leaflet CSS & JS for Interactive Map -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- FontAwesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+    body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+    .glass-card { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(8px); border: 1px solid #e2e8f0; }
+    .tab-active { border-bottom: 3px solid #2563eb; color: #1d4ed8; font-weight: 600; }
+    #indiaMap { height: 480px; width: 100%; border-radius: 0.75rem; z-index: 10; }
+  </style>
+</head>
+<body class="text-slate-800 antialiased min-h-screen flex flex-col">
+
+  <!-- Top Navbar -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-50 shadow-sm">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white shadow-md">
+          <i class="fa-solid fa-chart-line text-lg"></i>
+        </div>
+        <div>
+          <h1 class="text-lg font-bold text-slate-900 leading-tight">India Unemployment Intelligence</h1>
+          <p class="text-xs text-slate-500">Macroeconomic & COVID-19 Shock Analytics</p>
+        </div>
+      </div>
+
+      <!-- Global Filter Controls -->
+      <div class="flex items-center space-x-3">
+        <div>
+          <label class="text-xs font-semibold text-slate-500 block">State</label>
+          <select id="stateSelect" class="bg-slate-50 border border-slate-300 text-slate-800 text-xs rounded-lg px-2.5 py-1.5 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+            <option value="All">All States (National)</option>
+            {% for s in states %}
+            <option value="{{ s }}">{{ s }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div>
+          <label class="text-xs font-semibold text-slate-500 block">Zone</label>
+          <select id="zoneSelect" class="bg-slate-50 border border-slate-300 text-slate-800 text-xs rounded-lg px-2.5 py-1.5 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+            <option value="All">All Zones</option>
+            {% for z in zones %}
+            <option value="{{ z }}">{{ z }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <button onclick="refreshDashboard()" class="mt-4 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg shadow transition flex items-center gap-1.5">
+          <i class="fa-solid fa-arrows-rotate text-xs"></i> Apply
+        </button>
+      </div>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex space-x-6 text-sm text-slate-600 overflow-x-auto">
+      <button onclick="switchTab('overview')" id="tab-btn-overview" class="py-3 px-1 tab-active transition whitespace-nowrap">
+        <i class="fa-solid fa-gauge-high mr-1.5"></i> Overview & Trends
+      </button>
+      <button onclick="switchTab('shock')" id="tab-btn-shock" class="py-3 px-1 transition whitespace-nowrap">
+        <i class="fa-solid fa-virus mr-1.5"></i> COVID-19 Shock
+      </button>
+      <button onclick="switchTab('geo')" id="tab-btn-geo" class="py-3 px-1 transition whitespace-nowrap">
+        <i class="fa-solid fa-map-location-dot mr-1.5"></i> Geospatial Map
+      </button>
+      <button onclick="switchTab('policy')" id="tab-btn-policy" class="py-3 px-1 transition whitespace-nowrap">
+        <i class="fa-solid fa-landmark mr-1.5"></i> Policy Brief
+      </button>
+      <button onclick="switchTab('gallery')" id="tab-btn-gallery" class="py-3 px-1 transition whitespace-nowrap">
+        <i class="fa-solid fa-images mr-1.5"></i> Figure Gallery
+      </button>
+      <button onclick="switchTab('data')" id="tab-btn-data" class="py-3 px-1 transition whitespace-nowrap">
+        <i class="fa-solid fa-table mr-1.5"></i> Data Explorer
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Content Container -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1 w-full">
+
+    <!-- KPI Metric Cards Ribbon -->
+    <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+      <div class="glass-card p-4 rounded-xl shadow-sm border-l-4 border-emerald-500">
+        <div class="text-xs font-semibold uppercase text-slate-500 tracking-wider">Pre-Lockdown Baseline</div>
+        <div id="kpiPreUR" class="text-2xl font-extrabold text-slate-800 mt-1">9.76%</div>
+        <div class="text-xs text-slate-500 mt-0.5">Jan - Mar 2020 Avg</div>
+      </div>
+
+      <div class="glass-card p-4 rounded-xl shadow-sm border-l-4 border-rose-500">
+        <div class="text-xs font-semibold uppercase text-slate-500 tracking-wider">Lockdown Peak Shock</div>
+        <div id="kpiPeakUR" class="text-2xl font-extrabold text-rose-600 mt-1">22.75%</div>
+        <div id="kpiShockDelta" class="text-xs font-semibold text-rose-600 mt-0.5">+12.99 pp (+133%)</div>
+      </div>
+
+      <div class="glass-card p-4 rounded-xl shadow-sm border-l-4 border-indigo-500">
+        <div class="text-xs font-semibold uppercase text-slate-500 tracking-wider">Post-Lockdown Recovery</div>
+        <div id="kpiPostUR" class="text-2xl font-extrabold text-indigo-600 mt-1">9.56%</div>
+        <div class="text-xs text-emerald-600 font-semibold mt-0.5">V-Shaped Initial Rebound</div>
+      </div>
+
+      <div class="glass-card p-4 rounded-xl shadow-sm border-l-4 border-amber-500">
+        <div class="text-xs font-semibold uppercase text-slate-500 tracking-wider">Workforce Displaced</div>
+        <div id="kpiDisplaced" class="text-2xl font-extrabold text-amber-700 mt-1">107.8 M</div>
+        <div class="text-xs text-slate-500 mt-0.5">Active Jobs Displaced (Peak)</div>
+      </div>
+
+      <div class="glass-card p-4 rounded-xl shadow-sm border-l-4 border-cyan-500">
+        <div class="text-xs font-semibold uppercase text-slate-500 tracking-wider">Labour Participation</div>
+        <div id="kpiLPRDrop" class="text-2xl font-extrabold text-slate-800 mt-1">-6.67 pp</div>
+        <div class="text-xs text-rose-500 font-semibold mt-0.5">44.18% down to 37.51%</div>
+      </div>
+    </section>
+
+    <!-- TAB 1: OVERVIEW & TRENDS -->
+    <div id="tab-overview" class="space-y-6">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Chart 1: National Timeline -->
+        <div class="glass-card p-5 rounded-xl shadow-sm">
+          <div class="flex items-center justify-between mb-3">
+            <h2 class="text-sm font-bold text-slate-800">Unemployment Rate & Employed Workforce (2020)</h2>
+            <span class="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-medium">Monthly Series</span>
+          </div>
+          <div class="h-72">
+            <canvas id="timelineChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Chart 2: Rural vs Urban Divergence -->
+        <div class="glass-card p-5 rounded-xl shadow-sm">
+          <div class="flex items-center justify-between mb-3">
+            <h2 class="text-sm font-bold text-slate-800">Urban vs. Rural Unemployment Divergence</h2>
+            <span class="text-xs bg-rose-50 text-rose-700 px-2 py-0.5 rounded-full font-medium">Urban Excess Gap</span>
+          </div>
+          <div class="h-72">
+            <canvas id="ruralUrbanChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Macro Zonal Comparison -->
+      <div class="glass-card p-5 rounded-xl shadow-sm">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-sm font-bold text-slate-800">Macro-Zone Unemployment Comparison Across Pandemic Phases</h2>
+          <span class="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium">5 Macro Zones</span>
+        </div>
+        <div class="h-64">
+          <canvas id="zonalChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 2: COVID-19 SHOCK ANALYSIS -->
+    <div id="tab-shock" class="hidden space-y-6">
+      <div class="glass-card p-5 rounded-xl shadow-sm">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h2 class="text-sm font-bold text-slate-800">State-by-State Lockdown Shock Intensity Ranking</h2>
+            <p class="text-xs text-slate-500">Ranked by Absolute Percentage Point Jump (Peak April-May 2020 vs Pre-Lockdown)</p>
+          </div>
+          <span class="text-xs bg-rose-100 text-rose-800 px-2.5 py-1 rounded-full font-semibold">Crisis Hotspots</span>
+        </div>
+        <div class="h-96">
+          <canvas id="stateShockChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Deep Dive Insights Cards -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="bg-white p-5 rounded-xl border border-slate-200">
+          <div class="w-8 h-8 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center mb-3">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+          </div>
+          <h3 class="font-bold text-sm text-slate-900 mb-1">Puducherry & High-Service States</h3>
+          <p class="text-xs text-slate-600 leading-relaxed">
+            Puducherry witnessed an extreme <strong>+65.84 percentage point surge</strong>, reaching 67.02% unemployment. Tourism, hospitality, and informal retail collapse paralyzed coastal and service economies.
+          </p>
+        </div>
+
+        <div class="bg-white p-5 rounded-xl border border-slate-200">
+          <div class="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center mb-3">
+            <i class="fa-solid fa-person-walking-luggage"></i>
+          </div>
+          <h3 class="font-bold text-sm text-slate-900 mb-1">Migrant Labor Corridors (Bihar & Jharkhand)</h3>
+          <p class="text-xs text-slate-600 leading-relaxed">
+            Jharkhand (+42.93 pp) and Bihar (+34.19 pp) were severely impacted as millions of daily-wage migrants returned from shuttered metropolitan factories, overwhelming local rural labor absorption.
+          </p>
+        </div>
+
+        <div class="bg-white p-5 rounded-xl border border-slate-200">
+          <div class="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center mb-3">
+            <i class="fa-solid fa-shield-halved"></i>
+          </div>
+          <h3 class="font-bold text-sm text-slate-900 mb-1">Agrarian Resiliency (Chhattisgarh & Northeast)</h3>
+          <p class="text-xs text-slate-600 leading-relaxed">
+            States like Chhattisgarh (-1.57 pp), Sikkim (-10.17 pp), and Meghalaya remained remarkably insulated due to high rural agrarian dominance and early localized agricultural exemptions.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: GEOSPATIAL MAP -->
+    <div id="tab-geo" class="hidden space-y-6">
+      <div class="glass-card p-5 rounded-xl shadow-sm">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h2 class="text-sm font-bold text-slate-800">Geospatial Distribution of Peak Unemployment Rate Across India</h2>
+            <p class="text-xs text-slate-500">Circle radius and color reflect peak unemployment rate during COVID-19 lockdown. Click markers for details.</p>
+          </div>
+          <div class="flex items-center space-x-2 text-xs">
+            <span class="inline-flex items-center"><span class="w-3 h-3 rounded-full bg-emerald-500 mr-1"></span> &lt;10%</span>
+            <span class="inline-flex items-center"><span class="w-3 h-3 rounded-full bg-amber-500 mr-1"></span> 10-25%</span>
+            <span class="inline-flex items-center"><span class="w-3 h-3 rounded-full bg-rose-600 mr-1"></span> &gt;25%</span>
+          </div>
+        </div>
+        <div id="indiaMap"></div>
+      </div>
+    </div>
+
+    <!-- TAB 4: POLICY RECOMMENDATIONS -->
+    <div id="tab-policy" class="hidden space-y-6">
+      <div class="glass-card p-6 rounded-xl shadow-sm">
+        <div class="max-w-3xl mb-6">
+          <h2 class="text-lg font-extrabold text-slate-900">Evidence-Based Economic & Social Policy Blueprint</h2>
+          <p class="text-sm text-slate-600 mt-1">
+            Synthesized policy pillars derived directly from empirical findings: addressing urban vulnerability, institutionalizing safety nets, and accelerating labor market formalization.
+          </p>
+        </div>
+
+        <div id="policyContainer" class="space-y-4">
+          <!-- Populated dynamically via JS -->
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 5: PUBLICATION FIGURE GALLERY -->
+    <div id="tab-gallery" class="hidden space-y-6">
+      <div class="glass-card p-6 rounded-xl shadow-sm">
+        <div class="mb-4">
+          <h2 class="text-base font-bold text-slate-900">Publication Figures & Analytical Visualizations</h2>
+          <p class="text-xs text-slate-500">High-resolution figures generated using Matplotlib & Seaborn saved in <code class="bg-slate-100 px-1 py-0.5 rounded text-blue-600 font-mono">reports/figures/</code></p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div class="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm hover:shadow-md transition">
+            <img src="/static/reports/01_national_unemployment_trend.png" alt="National Trend" class="w-full h-48 object-cover">
+            <div class="p-3">
+              <h3 class="text-xs font-bold text-slate-800">Figure 1: National Unemployment Trajectory</h3>
+              <p class="text-[11px] text-slate-500 mt-0.5">Unemployment Rate vs Active Employed workforce.</p>
+            </div>
+          </div>
+
+          <div class="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm hover:shadow-md transition">
+            <img src="/static/reports/02_covid_lockdown_shock_comparison.png" alt="Shock Comparison" class="w-full h-48 object-cover">
+            <div class="p-3">
+              <h3 class="text-xs font-bold text-slate-800">Figure 2: Lockdown Shock by Phase</h3>
+              <p class="text-[11px] text-slate-500 mt-0.5">Pre vs Peak vs Post comparisons.</p>
+            </div>
+          </div>
+
+          <div class="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm hover:shadow-md transition">
+            <img src="/static/reports/03_rural_vs_urban_unemployment.png" alt="Rural vs Urban" class="w-full h-48 object-cover">
+            <div class="p-3">
+              <h3 class="text-xs font-bold text-slate-800">Figure 3: Rural vs Urban Divergence</h3>
+              <p class="text-[11px] text-slate-500 mt-0.5">Urban excess unemployment penalty timeline.</p>
+            </div>
+          </div>
+
+          <div class="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm hover:shadow-md transition">
+            <img src="/static/reports/04_state_level_lockdown_shock.png" alt="State Shock" class="w-full h-48 object-cover">
+            <div class="p-3">
+              <h3 class="text-xs font-bold text-slate-800">Figure 4: State-Level Shock Ranking</h3>
+              <p class="text-[11px] text-slate-500 mt-0.5">All 27 States ranked by shock delta.</p>
+            </div>
+          </div>
+
+          <div class="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm hover:shadow-md transition">
+            <img src="/static/reports/05_zonal_regional_impact.png" alt="Zonal Impact" class="w-full h-48 object-cover">
+            <div class="p-3">
+              <h3 class="text-xs font-bold text-slate-800">Figure 5: Macro-Zonal Comparison</h3>
+              <p class="text-[11px] text-slate-500 mt-0.5">South, East, West, North, Northeast shifts.</p>
+            </div>
+          </div>
+
+          <div class="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm hover:shadow-md transition">
+            <img src="/static/reports/06_correlation_heatmap.png" alt="Correlation Heatmap" class="w-full h-48 object-cover">
+            <div class="p-3">
+              <h3 class="text-xs font-bold text-slate-800">Figure 6: Indicator Correlation Matrix</h3>
+              <p class="text-[11px] text-slate-500 mt-0.5">Pearson correlation between indicators.</p>
+            </div>
+          </div>
+
+          <div class="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm hover:shadow-md transition">
+            <img src="/static/reports/07_labour_participation_drop.png" alt="LPR Trend" class="w-full h-48 object-cover">
+            <div class="p-3">
+              <h3 class="text-xs font-bold text-slate-800">Figure 7: Labour Participation Plunge</h3>
+              <p class="text-[11px] text-slate-500 mt-0.5">Discouraged worker effect visualization.</p>
+            </div>
+          </div>
+
+          <div class="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm hover:shadow-md transition">
+            <img src="/static/reports/08_unemployment_distribution_boxplots.png" alt="Boxplots" class="w-full h-48 object-cover">
+            <div class="p-3">
+              <h3 class="text-xs font-bold text-slate-800">Figure 8: Distribution Boxplots</h3>
+              <p class="text-[11px] text-slate-500 mt-0.5">Variance and outlier analysis.</p>
+            </div>
+          </div>
+
+          <div class="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm hover:shadow-md transition">
+            <img src="/static/reports/09_seasonal_monthly_patterns.png" alt="Seasonal Patterns" class="w-full h-48 object-cover">
+            <div class="p-3">
+              <h3 class="text-xs font-bold text-slate-800">Figure 9: Seasonal Patterns</h3>
+              <p class="text-[11px] text-slate-500 mt-0.5">Agricultural season cyclicality.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 6: DATA EXPLORER -->
+    <div id="tab-data" class="hidden space-y-6">
+      <div class="glass-card p-5 rounded-xl shadow-sm">
+        <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
+          <div>
+            <h2 class="text-sm font-bold text-slate-800">Cleaned Unemployment Dataset Explorer</h2>
+            <p class="text-xs text-slate-500">Live preview of standardized records with enriched features</p>
+          </div>
+          <div class="flex items-center gap-3">
+            <input type="text" id="tableSearch" onkeyup="filterTable()" placeholder="Search state or area..." class="bg-slate-50 border border-slate-300 text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <button onclick="downloadCSV()" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-medium rounded-lg shadow transition flex items-center gap-1.5">
+              <i class="fa-solid fa-download"></i> Export CSV
+            </button>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto border border-slate-200 rounded-lg">
+          <table class="min-w-full text-xs text-left text-slate-700 divide-y divide-slate-200" id="dataTable">
+            <thead class="bg-slate-50 text-slate-600 font-semibold uppercase">
+              <tr>
+                <th class="px-4 py-2.5">State</th>
+                <th class="px-4 py-2.5">Area</th>
+                <th class="px-4 py-2.5">Date</th>
+                <th class="px-4 py-2.5">Unemployment (%)</th>
+                <th class="px-4 py-2.5">Employed</th>
+                <th class="px-4 py-2.5">Labour Part. (%)</th>
+                <th class="px-4 py-2.5">Phase</th>
+                <th class="px-4 py-2.5">Season</th>
+              </tr>
+            </thead>
+            <tbody id="dataTableBody" class="divide-y divide-slate-100 bg-white">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="bg-white border-t border-slate-200 py-4 mt-8">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-wrap justify-between items-center text-xs text-slate-500 gap-2">
+      <div>Data Science Project: <strong>TASK 2 - India Unemployment Analysis with Python</strong></div>
+      <div class="flex items-center space-x-4">
+        <span><i class="fa-solid fa-server text-emerald-500 mr-1"></i> Running on Localhost</span>
+        <span>Python 3.7 + Flask + Chart.js</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Application Logic -->
+  <script>
+    let timelineChartInstance = null;
+    let ruralUrbanChartInstance = null;
+    let zonalChartInstance = null;
+    let stateShockChartInstance = null;
+    let mapInstance = null;
+    let fullTableRecords = [];
+
+    function switchTab(tabId) {
+      const tabs = ['overview', 'shock', 'geo', 'policy', 'gallery', 'data'];
+      tabs.forEach(t => {
+        const el = document.getElementById('tab-' + t);
+        const btn = document.getElementById('tab-btn-' + t);
+        if (t === tabId) {
+          el.classList.remove('hidden');
+          btn.classList.add('tab-active');
+        } else {
+          el.classList.add('hidden');
+          btn.classList.remove('tab-active');
+        }
+      });
+
+      if (tabId === 'geo' && mapInstance) {
+        setTimeout(() => { mapInstance.invalidateSize(); }, 200);
+      }
+    }
+
+    async function loadKpiMetrics(state = 'All', zone = 'All') {
+      const res = await fetch(`/api/kpi_metrics?state=${encodeURIComponent(state)}&zone=${encodeURIComponent(zone)}`);
+      const data = await res.json();
+      document.getElementById('kpiPreUR').innerText = data.pre_lockdown_ur + '%';
+      document.getElementById('kpiPeakUR').innerText = data.peak_lockdown_ur + '%';
+      document.getElementById('kpiShockDelta').innerText = `+${data.shock_delta} pp (+${data.shock_pct}%)`;
+      document.getElementById('kpiPostUR').innerText = data.post_lockdown_ur + '%';
+      document.getElementById('kpiDisplaced').innerText = (data.jobs_displaced / 1e6).toFixed(1) + ' M';
+      document.getElementById('kpiLPRDrop').innerText = `-${data.lpr_drop} pp`;
+    }
+
+    async function loadTimelineChart(state = 'All', zone = 'All') {
+      const res = await fetch(`/api/monthly_trend?state=${encodeURIComponent(state)}&zone=${encodeURIComponent(zone)}`);
+      const data = await res.json();
+
+      const ctx = document.getElementById('timelineChart').getContext('2d');
+      if (timelineChartInstance) timelineChartInstance.destroy();
+
+      timelineChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: data.labels,
+          datasets: [
+            {
+              label: 'Unemployment Rate (%)',
+              data: data.unemployment_rate,
+              borderColor: '#e63946',
+              backgroundColor: 'rgba(230, 57, 70, 0.1)',
+              borderWidth: 2.5,
+              tension: 0.3,
+              fill: true,
+              yAxisID: 'y'
+            },
+            {
+              label: 'Employed (Millions)',
+              data: data.employed_millions,
+              borderColor: '#1d3557',
+              borderWidth: 2,
+              borderDash: [5, 5],
+              tension: 0.3,
+              yAxisID: 'y1'
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          scales: {
+            y: {
+              type: 'linear',
+              display: true,
+              position: 'left',
+              title: { display: true, text: 'Unemployment Rate (%)' },
+              min: 0
+            },
+            y1: {
+              type: 'linear',
+              display: true,
+              position: 'right',
+              title: { display: true, text: 'Employed (Millions)' },
+              grid: { drawOnChartArea: false }
+            }
+          }
+        }
+      });
+    }
+
+    async function loadRuralUrbanChart(state = 'All') {
+      const res = await fetch(`/api/rural_urban_trend?state=${encodeURIComponent(state)}`);
+      const data = await res.json();
+
+      const ctx = document.getElementById('ruralUrbanChart').getContext('2d');
+      if (ruralUrbanChartInstance) ruralUrbanChartInstance.destroy();
+
+      ruralUrbanChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: data.labels,
+          datasets: [
+            {
+              label: 'Urban Rate (%)',
+              data: data.urban,
+              borderColor: '#d62828',
+              backgroundColor: 'rgba(214, 40, 40, 0.12)',
+              borderWidth: 2.5,
+              tension: 0.25,
+              fill: true
+            },
+            {
+              label: 'Rural Rate (%)',
+              data: data.rural,
+              borderColor: '#2a9d8f',
+              backgroundColor: 'rgba(42, 157, 143, 0.1)',
+              borderWidth: 2.5,
+              tension: 0.25,
+              fill: true
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: { beginAtZero: true, title: { display: true, text: 'Rate (%)' } }
+          }
+        }
+      });
+    }
+
+    async function loadZonalChart() {
+      const res = await fetch('/api/zonal_comparison');
+      const data = await res.json();
+
+      const ctx = document.getElementById('zonalChart').getContext('2d');
+      if (zonalChartInstance) zonalChartInstance.destroy();
+
+      zonalChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: data.zones,
+          datasets: [
+            { label: 'Pre-Lockdown', data: data.pre, backgroundColor: '#457b9d' },
+            { label: 'Lockdown Peak', data: data.peak, backgroundColor: '#e63946' },
+            { label: 'Post-Lockdown', data: data.post, backgroundColor: '#2a9d8f' }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: { y: { beginAtZero: true, title: { display: true, text: 'Avg Unemployment Rate (%)' } } }
+        }
+      });
+    }
+
+    async function loadStateShockChart(zone = 'All') {
+      const res = await fetch(`/api/state_shock_rankings?zone=${encodeURIComponent(zone)}`);
+      const data = await res.json();
+
+      const ctx = document.getElementById('stateShockChart').getContext('2d');
+      if (stateShockChartInstance) stateShockChartInstance.destroy();
+
+      stateShockChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: data.states,
+          datasets: [
+            {
+              label: 'Shock Delta (+pp)',
+              data: data.delta,
+              backgroundColor: data.delta.map(d => d > 20 ? '#d62828' : (d > 10 ? '#e76f51' : '#2a9d8f')),
+              borderRadius: 4
+            }
+          ]
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: { x: { title: { display: true, text: 'Percentage Point Increase (Lockdown vs Baseline)' } } }
+        }
+      });
+    }
+
+    async function initMap() {
+      if (mapInstance) return;
+      mapInstance = L.map('indiaMap').setView([22.5, 82.0], 5);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(mapInstance);
+
+      const res = await fetch('/api/map_data');
+      const states = await res.json();
+
+      states.forEach(s => {
+        const color = s.peak_ur > 25 ? '#e63946' : (s.peak_ur > 12 ? '#f59e0b' : '#10b981');
+        const radius = Math.max(12, Math.min(35, s.peak_ur * 0.9));
+
+        const circle = L.circleMarker([s.lat, s.lon], {
+          radius: radius,
+          fillColor: color,
+          color: '#ffffff',
+          weight: 2,
+          opacity: 1,
+          fillOpacity: 0.75
+        }).addTo(mapInstance);
+
+        circle.bindPopup(`
+          <div class="text-xs p-1">
+            <h4 class="font-bold text-sm text-slate-800">${s.state}</h4>
+            <div class="text-slate-500 font-medium mb-1">Zone: ${s.zone}</div>
+            <hr class="my-1 border-slate-200">
+            <div><strong>Lockdown Peak Rate:</strong> <span class="text-rose-600 font-bold">${s.peak_ur}%</span></div>
+            <div><strong>Pre-Lockdown Rate:</strong> ${s.pre_ur}%</div>
+            <div><strong>Shock Delta:</strong> +${s.shock_delta} pp</div>
+            <div><strong>Avg Employed:</strong> ${(s.avg_employed / 1e6).toFixed(2)}M</div>
+          </div>
+        `);
+      });
+    }
+
+    async function loadPolicyBrief() {
+      const res = await fetch('/api/policy_recommendations');
+      const data = await res.json();
+      const container = document.getElementById('policyContainer');
+      container.innerHTML = '';
+
+      data.pillars.forEach((p, idx) => {
+        const div = document.createElement('div');
+        div.className = "border border-slate-200 rounded-xl p-5 bg-white shadow-sm";
+        div.innerHTML = `
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+            <div class="flex items-center space-x-2">
+              <span class="w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs">${idx + 1}</span>
+              <h3 class="text-sm font-bold text-slate-900">${p.title}</h3>
+            </div>
+            <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full ${p.priority.includes('Critical') ? 'bg-rose-100 text-rose-800' : 'bg-blue-100 text-blue-800'}">${p.priority}</span>
+          </div>
+          <p class="text-xs text-slate-500 mb-2"><strong>Target:</strong> ${p.target_population}</p>
+          <p class="text-xs text-slate-700 bg-slate-50 p-2.5 rounded-lg border border-slate-100 mb-3 leading-relaxed">
+            <strong class="text-slate-900">Empirical Basis:</strong> ${p.empirical_basis}
+          </p>
+          <div>
+            <h4 class="text-xs font-bold text-slate-800 mb-1.5">Actionable Interventions:</h4>
+            <ul class="list-disc pl-5 text-xs text-slate-600 space-y-1">
+              ${p.recommendations.map(r => `<li>${r}</li>`).join('')}
+            </ul>
+          </div>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    async function loadTableData(state = 'All') {
+      const res = await fetch(`/api/raw_data?state=${encodeURIComponent(state)}&limit=150`);
+      fullTableRecords = await res.json();
+      renderTable(fullTableRecords);
+    }
+
+    function renderTable(records) {
+      const tbody = document.getElementById('dataTableBody');
+      tbody.innerHTML = '';
+      records.forEach(r => {
+        const tr = document.createElement('tr');
+        tr.className = "hover:bg-slate-50 transition";
+        tr.innerHTML = `
+          <td class="px-4 py-2 font-medium text-slate-900">${r.State}</td>
+          <td class="px-4 py-2"><span class="px-2 py-0.5 rounded-full text-[10px] font-semibold ${r.Area === 'Urban' ? 'bg-purple-100 text-purple-700' : 'bg-emerald-100 text-emerald-700'}">${r.Area}</span></td>
+          <td class="px-4 py-2">${r.Date}</td>
+          <td class="px-4 py-2 font-bold ${r.Unemployment_Rate > 20 ? 'text-rose-600' : 'text-slate-800'}">${r.Unemployment_Rate}%</td>
+          <td class="px-4 py-2">${Number(r.Employed).toLocaleString()}</td>
+          <td class="px-4 py-2">${r.Labour_Participation_Rate}%</td>
+          <td class="px-4 py-2">${r.Covid_Phase}</td>
+          <td class="px-4 py-2 text-slate-500">${r.Season}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function filterTable() {
+      const q = document.getElementById('tableSearch').value.toLowerCase();
+      const filtered = fullTableRecords.filter(r =>
+        r.State.toLowerCase().includes(q) || r.Area.toLowerCase().includes(q) || r.Covid_Phase.toLowerCase().includes(q)
+      );
+      renderTable(filtered);
+    }
+
+    function downloadCSV() {
+      if (!fullTableRecords.length) return;
+      const headers = Object.keys(fullTableRecords[0]).join(',');
+      const rows = fullTableRecords.map(r => Object.values(r).join(',')).join('\n');
+      const blob = new Blob([headers + '\n' + rows], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.setAttribute('href', url);
+      a.setAttribute('download', 'cleaned_unemployment_data.csv');
+      a.click();
+    }
+
+    function refreshDashboard() {
+      const state = document.getElementById('stateSelect').value;
+      const zone = document.getElementById('zoneSelect').value;
+      loadKpiMetrics(state, zone);
+      loadTimelineChart(state, zone);
+      loadRuralUrbanChart(state);
+      loadStateShockChart(zone);
+      loadTableData(state);
+    }
+
+    // Initialize on page load
+    window.addEventListener('DOMContentLoaded', () => {
+      refreshDashboard();
+      loadZonalChart();
+      initMap();
+      loadPolicyBrief();
+    });
+  </script>
+</body>
+</html>
